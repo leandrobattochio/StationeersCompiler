@@ -146,19 +146,19 @@ public class StationeerLexer
         return new LogicalOrToken(start);
     }
 
-    public void DebugTokens()
+    public IReadOnlyList<Token> Tokenize()
     {
-        Token token;
+        var tokens = new List<Token>();
         while (true)
         {
-            token = NextToken();
-            Console.WriteLine(token);
+            var token = NextToken();
+            tokens.Add(token);
 
             if (token.Type is TokenType.EndOfFile or TokenType.CompileError)
                 break;
         }
 
-        // Reset
         _pos = 0;
+        return tokens;
     }
 }

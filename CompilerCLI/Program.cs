@@ -1,16 +1,13 @@
-﻿using Compiler.CodeGeneration;
-using Compiler.Lexer;
-using Compiler.Parser;
-using Compiler.SemanticAnalysis;
+﻿using Compiler;
 using Spectre.Console;
 
 var code = """
            StationeersDevice airConditioner = referenceDevice(d0);
            StationeersDevice airSensor = referenceDevice(d1);
-           
+
            Float temp = airConditioner.Temperature;
            Float pressure = airSensor.Pressure;
-           
+
            temp = Math.convertToCelsius(temp);
            if (temp >= 25 && pressure < 101325.0) {
                airConditioner.On = true;
@@ -20,47 +17,25 @@ var code = """
            }
            """;
 
-var lexer = new StationeerLexer(code);
+var compiler = new StationeersCompiler(code);
 
 AnsiConsole.MarkupLine("[red]Tokens[/]");
-lexer.DebugTokens();
 
-var parser = new StationeerParser(lexer);
+foreach (var token in compiler.DebugTokens())
+    Console.WriteLine(token);
 
-var ast = parser.Parse();
 
 AnsiConsole.MarkupLine("[yellow]AST[/]");
-foreach (var stmt in ast)
+foreach (var stmt in compiler.DebugAst())
     Console.WriteLine(stmt);
 
-var semantic = new SemanticAnalyzer();
-
 AnsiConsole.MarkupLine("[green]Semantics[/]");
+AnsiConsole.MarkupLine($"[red]{compiler.DebugSemantics()}[/]");
 
-try
-{
-    semantic.Analyze(ast);
-}
-catch (Exception ex)
-{
-    AnsiConsole.MarkupLine($"[red]Exception: {ex.Message}[/]");
-    Console.Read();
-    Environment.Exit(1);
-}
-
-Console.WriteLine("Semantic analysis completed successfully");
-
-var irBuilder = new IrBuilder();
-var ir = irBuilder.Build(ast, semantic.DeviceReferences);
-
-var irOptimizer = new IrOptimizer();
-var optimizedIr = irOptimizer.Optimize(ir);
-
-var asm = CodeGenerator.Generate(optimizedIr);
+var asm = compiler.Compile(true);
 
 AnsiConsole.MarkupLine("[blue]Stationeers Assembly[/]");
 foreach (var line in asm)
     Console.WriteLine(line);
-
 
 Console.ReadLine();
