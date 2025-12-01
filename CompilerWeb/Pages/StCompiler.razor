@@ -1,0 +1,1003 @@
+@page "/"
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Stationeers Compiler</PageTitle>
+
+<div class="compiler-container">
+    <div class="header">
+        <h1>🚀 Stationeers Compiler</h1>
+        <p>Compile high-level code to Stationeers MIPS Assembly</p>
+    </div>
+
+    <div class="editor-section">
+        <div class="editor-panel">
+            <div class="panel-header">
+                <h3>📝 Source Code</h3>
+                <div class="header-buttons">
+                    <button class="btn-docs" @onclick="ToggleDocumentation" title="Language Documentation">
+                        📖
+                    </button>
+                    <button class="btn-compile" @onclick="CompileCode" disabled="@isCompiling">
+                        @if (isCompiling)
+                        {
+                            <span>⏳ Compiling...</span>
+                        }
+                        else
+                        {
+                            <span>▶️ Compile</span>
+                        }
+                    </button>
+                </div>
+            </div>
+            <div class="editor-wrapper">
+                <StandaloneCodeEditor @ref="editor"
+                                      Id="source-editor"
+                                      ConstructionOptions="EditorConstructionOptions"
+                                      OnDidInit="OnEditorInit" />
+            </div>
+        </div>
+
+        <div class="output-panel">
+            <div class="panel-header">
+                <h3>⚙️ Assembly Output</h3>
+                @if (!string.IsNullOrEmpty(assemblyOutput))
+                {
+                    <button class="btn-copy" @onclick="CopyToClipboard">
+                        📋 Copy
+                    </button>
+                }
+            </div>
+            <div class="output-wrapper">
+                @if (hasError)
+                {
+                    <div class="error-output">
+                        <div class="error-icon">❌</div>
+                        <pre>@errorMessage</pre>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(assemblyOutput))
+                {
+                    <div class="success-output">
+                        <pre class="assembly-code">@assemblyOutput</pre>
+                    </div>
+                }
+                else
+                {
+                    <div class="placeholder">
+                        <div class="placeholder-icon">💡</div>
+                        <p>Write your code and click Compile to see the assembly output</p>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(assemblyOutput) && !hasError)
+    {
+        <div class="debug-toggle-container">
+            <button class="btn-debug-toggle" @onclick="ToggleDebugInfo">
+                @if (showDebugInfo)
+                {
+                    <span>🔽 Hide Debug Info</span>
+                }
+                else
+                {
+                    <span>▶️ Show Debug Info</span>
+                }
+            </button>
+        </div>
+
+        @if (showDebugInfo)
+        {
+            <div class="compilation-details">
+            <div class="detail-panel tokens-panel">
+                <div class="panel-header">
+                    <h3>🔤 Tokens (Lexical Analysis)</h3>
+                </div>
+                <div class="output-wrapper">
+                    @if (tokenList != null && tokenList.Count > 0)
+                    {
+                        <div class="tokens-grid">
+                            @foreach (var token in tokenList)
+                            {
+                                <div class="token-item token-@GetTokenCssClass(token)">
+                                    <span class="token-type">@token.Type.ToString()</span>
+                                    @if (!string.IsNullOrEmpty(token.Value))
+                                    {
+                                        <span class="token-value">= "@token.Value"</span>
+                                    }
+                                    <span class="token-pos">pos: @token.Position</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="placeholder-small">No tokens generated</div>
+                    }
+                </div>
+            </div>
+
+            <div class="detail-panel ast-panel">
+                <div class="panel-header">
+                    <h3>🌳 AST (Abstract Syntax Tree)</h3>
+                </div>
+                <div class="output-wrapper">
+                    @if (astNodes != null && astNodes.Count > 0)
+                    {
+                        <div class="ast-tree">
+                            @foreach (var node in astNodes)
+                            {
+                                <AstNodeComponent Node="@node" Level="0" />
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="placeholder-small">No AST generated</div>
+                    }
+                </div>
+            </div>
+
+            <div class="detail-panel ir-panel">
+                <div class="panel-header">
+                    <h3>🧩 IR (Intermediate Representation)</h3>
+                </div>
+                <div class="output-wrapper">
+                    @if (irInstructions != null && irInstructions.Count > 0)
+                    {
+                        <div class="ir-list">
+                            @for (var i = 0; i < irInstructions.Count; i++)
+                            {
+                                <div class="ir-item ir-@GetIrInstructionType(irInstructions[i])">
+                                    <span class="ir-index">@i.</span>
+                                    <span class="ir-type">@GetIrInstructionTypeName(irInstructions[i])</span>
+                                    <span class="ir-details">@GetIrInstructionDetails(irInstructions[i])</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="placeholder-small">No IR generated</div>
+                    }
+                </div>
+            </div>
+        </div>
+        }
+    }
+
+    @if (showDocumentation)
+    {
+        <div class="modal-backdrop" @onclick="ToggleDocumentation">
+            <div class="modal-content" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h2>📚 Language Documentation</h2>
+                    <button class="btn-close" @onclick="ToggleDocumentation">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="doc-content">
+                        @((MarkupString)documentationHtml)
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private StandaloneCodeEditor? editor;
+    private string sourceCode = @"StationeersDevice airConditioner = referenceDevice(d0);
+StationeersDevice airSensor = referenceDevice(d1);
+
+Float temp = airSensor.Temperature;
+
+temp = Math.convertToCelsius(temp);
+if (temp >= 25) {
+    airConditioner.On = true;
+} else {
+    airConditioner.On = false;
+}";
+
+    private string assemblyOutput = string.Empty;
+    private string tokensOutput = string.Empty;
+    private string astOutput = string.Empty;
+    private string irOutput = string.Empty;
+    private string errorMessage = string.Empty;
+    private bool hasError = false;
+    private bool isCompiling = false;
+    private bool showDebugInfo = false;
+    private bool showDocumentation = false;
+    private List<AstNode> astNodes = new();
+    private List<LexerToken> tokenList = new();
+    private List<string> irInstructions = new();
+    private string documentationHtml = string.Empty;
+
+    public class AstNode
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+        public List<AstNode> Children { get; set; } = new();
+        public bool HasChildren => Children.Count > 0;
+    }
+
+    private int GetIndentLevel(string line)
+    {
+        var spaces = 0;
+        foreach (var c in line)
+        {
+            if (c == ' ') spaces++;
+            else break;
+        }
+        return spaces / 4;
+    }
+
+    private List<AstNode> BuildAstNodes(object obj)
+    {
+        var nodes = new List<AstNode>();
+        
+        if (obj is System.Collections.IEnumerable enumerable && !(obj is string))
+        {
+            foreach (var item in enumerable)
+            {
+                var node = BuildAstNode(item);
+                if (node != null)
+                    nodes.Add(node);
+            }
+        }
+        else
+        {
+            var node = BuildAstNode(obj);
+            if (node != null)
+                nodes.Add(node);
+        }
+        
+        return nodes;
+    }
+
+    private AstNode? BuildAstNode(object obj)
+    {
+        if (obj == null) return null;
+        
+        var type = obj.GetType();
+        var node = new AstNode { Name = type.Name };
+
+        if (type.IsPrimitive || obj is string || obj is decimal)
+        {
+            node.Value = obj.ToString() ?? string.Empty;
+            return node;
+        }
+
+        var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        foreach (var prop in properties)
+        {
+            var value = prop.GetValue(obj);
+            if (value == null) continue;
+
+            var childNode = new AstNode { Name = prop.Name };
+
+            if (value is string str)
+            {
+                childNode.Value = $"\"{str}\"";
+                node.Children.Add(childNode);
+            }
+            else if (value is int || value is double || value is float || value is bool || value is decimal)
+            {
+                childNode.Value = value.ToString() ?? string.Empty;
+                node.Children.Add(childNode);
+            }
+            else if (value is System.Collections.IEnumerable enumerable && !(value is string))
+            {
+                var items = new List<object>();
+                foreach (var item in enumerable)
+                    items.Add(item);
+                
+                if (items.Count > 0)
+                {
+                    childNode.Value = $"[{items.Count} item(s)]";
+                    foreach (var item in items)
+                    {
+                        var itemNode = BuildAstNode(item);
+                        if (itemNode != null)
+                            childNode.Children.Add(itemNode);
+                    }
+                    node.Children.Add(childNode);
+                }
+            }
+            else if (value.GetType().Namespace?.StartsWith("Compiler.Domain.Ast") == true)
+            {
+                var subNode = BuildAstNode(value);
+                if (subNode != null)
+                {
+                    subNode.Name = $"{prop.Name}: {subNode.Name}";
+                    node.Children.Add(subNode);
+                }
+            }
+        }
+
+        return node;
+    }
+
+    private string FormatAst(object statements)
+    {
+        var sb = new System.Text.StringBuilder();
+        FormatAstRecursive(statements, sb, 0);
+        return sb.ToString();
+    }
+
+    private void FormatAstRecursive(object obj, System.Text.StringBuilder sb, int indent)
+    {
+        var indentStr = new string(' ', indent * 2);
+        
+        if (obj == null)
+        {
+            sb.AppendLine($"{indentStr}null");
+            return;
+        }
+
+        var type = obj.GetType();
+        var typeName = type.Name;
+
+        if (obj is System.Collections.IEnumerable enumerable && !(obj is string))
+        {
+            var items = new List<object>();
+            foreach (var item in enumerable)
+            {
+                items.Add(item);
+            }
+            
+            if (items.Count == 0)
+            {
+                sb.AppendLine($"{indentStr}[]");
+            }
+            else
+            {
+                sb.AppendLine($"{indentStr}[");
+                foreach (var item in items)
+                {
+                    FormatAstRecursive(item, sb, indent + 1);
+                }
+                sb.AppendLine($"{indentStr}]");
+            }
+            return;
+        }
+
+        if (type.IsPrimitive || obj is string || obj is decimal)
+        {
+            if (obj is string str)
+            {
+                sb.AppendLine($"{indentStr}\"{str}\"");
+            }
+            else
+            {
+                sb.AppendLine($"{indentStr}{obj}");
+            }
+            return;
+        }
+
+        sb.AppendLine($"{indentStr}{typeName} {{");
+
+        var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        foreach (var prop in properties)
+        {
+            var value = prop.GetValue(obj);
+            var propIndent = new string(' ', (indent + 1) * 2);
+            
+            if (value == null)
+            {
+                sb.AppendLine($"{propIndent}{prop.Name} = null");
+            }
+            else if (value is string str)
+            {
+                sb.AppendLine($"{propIndent}{prop.Name} = \"{str}\"");
+            }
+            else if (value is int || value is double || value is float || value is bool || value is decimal)
+            {
+                sb.AppendLine($"{propIndent}{prop.Name} = {value}");
+            }
+            else if (value is System.Collections.IEnumerable && !(value is string))
+            {
+                sb.AppendLine($"{propIndent}{prop.Name} =");
+                FormatAstRecursive(value, sb, indent + 2);
+            }
+            else if (value.GetType().Namespace?.StartsWith("Compiler.Domain.Ast") == true)
+            {
+                sb.AppendLine($"{propIndent}{prop.Name} =");
+                FormatAstRecursive(value, sb, indent + 2);
+            }
+            else
+            {
+                sb.AppendLine($"{propIndent}{prop.Name} = {value}");
+            }
+        }
+
+        sb.AppendLine($"{indentStr}}}");
+    }
+
+    private StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
+    {
+        return new StandaloneEditorConstructionOptions
+        {
+            AutomaticLayout = true,
+            Language = "javascript",
+            Theme = "vs-dark",
+            Value = sourceCode,
+            FontSize = 14,
+            LineNumbers = "on",
+            RenderWhitespace = "selection",
+            Minimap = new EditorMinimapOptions { Enabled = true },
+            ScrollBeyondLastLine = false,
+            TabSize = 4
+        };
+    }
+
+    private async Task OnEditorInit()
+    {
+        if (editor != null)
+        {
+            await editor.SetValue(sourceCode);
+            
+            await Task.Delay(100);
+            await editor.Layout();
+            await JSRuntime.InvokeVoidAsync("resizeMonacoEditor");
+            
+            await Task.Delay(500);
+            await editor.Layout();
+            await JSRuntime.InvokeVoidAsync("resizeMonacoEditor");
+        }
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && editor != null)
+        {
+            await Task.Delay(200);
+            await editor.Layout();
+            await JSRuntime.InvokeVoidAsync("resizeMonacoEditor");
+        }
+    }
+
+    private async Task CompileCode()
+    {
+        isCompiling = true;
+        hasError = false;
+        errorMessage = string.Empty;
+        assemblyOutput = string.Empty;
+        tokensOutput = string.Empty;
+        astOutput = string.Empty;
+        irOutput = string.Empty;
+        irInstructions.Clear();
+
+        try
+        {
+            if (editor != null)
+            {
+                sourceCode = await editor.GetValue();
+            }
+
+            var tokensLexer = new StationeerLexer(sourceCode);
+            tokenList = new List<Compiler.Lexer.Tokens.Token>();
+            Compiler.Lexer.Tokens.Token token;
+            do
+            {
+                token = tokensLexer.NextToken();
+                tokenList.Add(token);
+            } while (token is not EndOfFileToken);
+            
+            tokensOutput = string.Join("\n", tokenList.Select(t => t.ToString()));
+
+            var lexer = new StationeerLexer(sourceCode);
+            var parser = new StationeerParser(lexer);
+            var ast = parser.Parse();
+            astOutput = FormatAst(ast);
+            astNodes = BuildAstNodes(ast);
+
+            var semantic = new SemanticAnalyzer();
+            semantic.Analyze(ast);
+
+            var irBuilder = new IrBuilder();
+            var ir = irBuilder.Build(ast, semantic.DeviceReferences);
+            irOutput = string.Join("\n", ir.Instructions.Select(i => i.ToString()));
+            irInstructions = ir.Instructions.Select(i => i.ToString()).ToList();
+
+            var asmLines = CodeGenerator.Generate(ir);
+            assemblyOutput = string.Join("\n", asmLines);
+
+        }
+        catch (Exception ex)
+        {
+            hasError = true;
+            errorMessage = $"Compilation Error:\n{ex.Message}";
+        }
+        finally
+        {
+            isCompiling = false;
+        }
+    }
+
+    private async Task CopyToClipboard()
+    {
+        if (!string.IsNullOrEmpty(assemblyOutput))
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", assemblyOutput);
+        }
+    }
+
+    private void ToggleDebugInfo()
+    {
+        showDebugInfo = !showDebugInfo;
+    }
+
+    private string GetTokenCssClass(LexerToken token)
+    {
+        return token.Type switch
+        {
+            TokenType.Keyword => "keyword",
+            TokenType.Identifier => "identifier",
+            TokenType.Number => "number",
+            TokenType.DeviceProperty => "property",
+            TokenType.Plus or TokenType.Minus or TokenType.Multiply or TokenType.Divide => "operator",
+            TokenType.GreaterThan or TokenType.LessThan or TokenType.GreaterThanOrEqual or 
+            TokenType.LessThanOrEqual or TokenType.EqualsEquals or TokenType.NotEquals => "comparison",
+            TokenType.LogicalAnd or TokenType.LogicalOr => "logical",
+            TokenType.Equals => "assignment",
+            TokenType.LParen or TokenType.RParen or TokenType.LBrace or TokenType.RBrace => "bracket",
+            TokenType.Semicolon or TokenType.Comma => "punctuation",
+            TokenType.EndOfFile => "eof",
+            _ => "default"
+        };
+    }
+
+    private string GetIrInstructionType(string instruction)
+    {
+        if (instruction.StartsWith("LabelInstruction")) return "label";
+        if (instruction.StartsWith("LoadConstInstruction")) return "load";
+        if (instruction.StartsWith("LoadFromDeviceInstruction")) return "load";
+        if (instruction.StartsWith("StoreToDeviceInstruction")) return "store";
+        if (instruction.StartsWith("BinaryOpInstruction")) return "arithmetic";
+        if (instruction.StartsWith("CompareInstruction")) return "compare";
+        if (instruction.StartsWith("LogicalAndInstruction")) return "logical";
+        if (instruction.StartsWith("LogicalOrInstruction")) return "logical";
+        if (instruction.StartsWith("JumpInstruction")) return "jump";
+        if (instruction.StartsWith("BranchIfZeroInstruction")) return "branch";
+        if (instruction.StartsWith("YieldInstruction")) return "yield";
+        if (instruction.StartsWith("MoveInstruction")) return "move";
+        return "default";
+    }
+
+    private string GetIrInstructionTypeName(string instruction)
+    {
+        // Use exact names from Core IR classes
+        if (instruction.StartsWith("LabelInstruction")) return "LabelInstruction";
+        if (instruction.StartsWith("LoadConstInstruction")) return "LoadConstInstruction";
+        if (instruction.StartsWith("LoadFromDeviceInstruction")) return "LoadFromDeviceInstruction";
+        if (instruction.StartsWith("StoreToDeviceInstruction")) return "StoreToDeviceInstruction";
+        if (instruction.StartsWith("BinaryOpInstruction")) return "BinaryOpInstruction";
+        if (instruction.StartsWith("CompareInstruction")) return "CompareInstruction";
+        if (instruction.StartsWith("LogicalAndInstruction")) return "LogicalAndInstruction";
+        if (instruction.StartsWith("LogicalOrInstruction")) return "LogicalOrInstruction";
+        if (instruction.StartsWith("JumpInstruction")) return "JumpInstruction";
+        if (instruction.StartsWith("BranchIfZeroInstruction")) return "BranchIfZeroInstruction";
+        if (instruction.StartsWith("YieldInstruction")) return "YieldInstruction";
+        if (instruction.StartsWith("MoveInstruction")) return "MoveInstruction";
+        
+        var parts = instruction.Split('(', '{', ' ');
+        return parts.Length > 0 ? parts[0] : "Unknown";
+    }
+
+    private string GetIrInstructionDetails(string instruction)
+    {
+        var openBrace = instruction.IndexOf('{');
+        if (openBrace > 0)
+        {
+            return instruction.Substring(openBrace);
+        }
+        
+        var openParen = instruction.IndexOf('(');
+        if (openParen > 0)
+        {
+            return instruction.Substring(openParen);
+        }
+        
+        return instruction;
+    }
+
+    private void ToggleDocumentation()
+    {
+        showDocumentation = !showDocumentation;
+        
+        if (showDocumentation && string.IsNullOrEmpty(documentationHtml))
+        {
+            LoadDocumentation();
+        }
+    }
+
+    private void LoadDocumentation()
+    {
+        try
+        {
+            documentationHtml = @"
+<h1>🚀 Stationeers High-Level Language Documentation</h1>
+
+<h2>📝 Overview</h2>
+<p>This language provides a higher-level abstraction for programming Stationeers IC10 MIPS chips, making it easier to write and maintain complex logic. It compiles directly to MIPS assembly code.</p>
+
+<hr/>
+
+<h2>🔤 Variable Declaration</h2>
+
+<h3>Type Inference with <code>var</code></h3>
+<p>The compiler automatically infers the type:</p>
+<pre><code>var temperature = 300;        // Inferred as Int
+var pressure = 101325.0;      // Inferred as Float
+var isActive = true;          // Inferred as Boolean</code></pre>
+
+<h3>Explicit Type Declaration</h3>
+<p>You can specify the type explicitly:</p>
+<pre><code>Int temperature = 300;
+Float pressure = 101325.0;
+Boolean isActive = true;
+StationeersDevice sensor = referenceDevice(d0);</code></pre>
+
+<h3>Supported Types</h3>
+<ul>
+    <li><strong>Int</strong> - Integer numbers</li>
+    <li><strong>Float</strong> - Decimal numbers</li>
+    <li><strong>Boolean</strong> - true/false values</li>
+    <li><strong>StationeersDevice</strong> - Device references</li>
+</ul>
+
+<hr/>
+
+<h2>🔧 Device Management</h2>
+
+<h3>referenceDevice(pin)</h3>
+<p>Creates a reference to a device connected to a specific pin.</p>
+<p><strong>Valid pins:</strong> <code>d0</code>, <code>d1</code>, <code>d2</code>, <code>d3</code>, <code>d4</code>, <code>d5</code>, <code>db</code></p>
+<pre><code>StationeersDevice sensor = referenceDevice(d0);
+StationeersDevice pump = referenceDevice(d1);
+StationeersDevice display = referenceDevice(db);</code></pre>
+
+<h3>Reading Device Properties</h3>
+<p>Access device properties using dot notation:</p>
+<pre><code>StationeersDevice sensor = referenceDevice(d0);
+Float temp = sensor.Temperature;
+Float pressure = sensor.Pressure;
+Float power = sensor.Power;
+Float setting = sensor.Setting;</code></pre>
+
+<h3>Writing to Device Properties</h3>
+<p>Set device properties using assignment:</p>
+<pre><code>StationeersDevice device = referenceDevice(d0);
+device.On = true;              // Turn device ON
+device.On = false;             // Turn device OFF
+device.Setting = 50;           // Set device setting
+device.Mode = 1;               // Set device mode</code></pre>
+
+<h3>Common Device Properties</h3>
+<table style='width: 100%; border-collapse: collapse; margin: 10px 0;'>
+    <thead>
+        <tr style='background: #2d2d30; border-bottom: 2px solid #007acc;'>
+            <th style='padding: 8px; text-align: left;'>Property</th>
+            <th style='padding: 8px; text-align: left;'>Type</th>
+            <th style='padding: 8px; text-align: left;'>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>Temperature</code></td>
+            <td style='padding: 8px;'>Float</td>
+            <td style='padding: 8px;'>Current temperature (Kelvin)</td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>Pressure</code></td>
+            <td style='padding: 8px;'>Float</td>
+            <td style='padding: 8px;'>Current pressure (kPa)</td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>Power</code></td>
+            <td style='padding: 8px;'>Float</td>
+            <td style='padding: 8px;'>Power consumption/generation</td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>On</code></td>
+            <td style='padding: 8px;'>Boolean</td>
+            <td style='padding: 8px;'>Device ON/OFF state</td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>Setting</code></td>
+            <td style='padding: 8px;'>Float</td>
+            <td style='padding: 8px;'>Device setting value</td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>Mode</code></td>
+            <td style='padding: 8px;'>Int</td>
+            <td style='padding: 8px;'>Device mode</td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>🧮 Built-in Functions</h2>
+
+<h3>Math.convertToCelsius(kelvin)</h3>
+<p>Converts temperature from Kelvin to Celsius (subtracts 273.15).</p>
+<p><strong>Parameters:</strong> Int or Float</p>
+<p><strong>Returns:</strong> Same type as input</p>
+<pre><code>Float kelvin = sensor.Temperature;
+Float celsius = Math.convertToCelsius(kelvin);
+
+// Example: 298.15 K → 25.0 °C</code></pre>
+
+<h3>sleep()</h3>
+<p>Pauses execution for one game tick (equivalent to <code>yield</code> instruction).</p>
+<pre><code>sleep();  // Wait one tick</code></pre>
+
+<hr/>
+
+<h2>🔀 Control Flow</h2>
+
+<h3>If-Else Statements</h3>
+<p>Conditional execution based on boolean expressions:</p>
+<pre><code>if (temperature &gt;= 300) {
+    device.On = true;
+} else {
+    device.On = false;
+}</code></pre>
+
+<h3>Nested If Statements</h3>
+<pre><code>if (temp &gt; 300) {
+    if (pressure &gt; 50000) {
+        vent.On = true;
+    }
+}</code></pre>
+
+<h3>Block Statements</h3>
+<p>Group multiple statements with curly braces:</p>
+<pre><code>{
+    var x = 10;
+    var y = 20;
+    var sum = x + y;
+}</code></pre>
+
+<hr/>
+
+<h2>➕ Operators</h2>
+
+<h3>Arithmetic Operators</h3>
+<table style='width: 100%; border-collapse: collapse; margin: 10px 0;'>
+    <thead>
+        <tr style='background: #2d2d30; border-bottom: 2px solid #007acc;'>
+            <th style='padding: 8px; text-align: left;'>Operator</th>
+            <th style='padding: 8px; text-align: left;'>Description</th>
+            <th style='padding: 8px; text-align: left;'>Example</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>+</code></td>
+            <td style='padding: 8px;'>Addition</td>
+            <td style='padding: 8px;'><code>a + b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>-</code></td>
+            <td style='padding: 8px;'>Subtraction</td>
+            <td style='padding: 8px;'><code>a - b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>*</code></td>
+            <td style='padding: 8px;'>Multiplication</td>
+            <td style='padding: 8px;'><code>a * b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>/</code></td>
+            <td style='padding: 8px;'>Division</td>
+            <td style='padding: 8px;'><code>a / b</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Comparison Operators</h3>
+<table style='width: 100%; border-collapse: collapse; margin: 10px 0;'>
+    <thead>
+        <tr style='background: #2d2d30; border-bottom: 2px solid #007acc;'>
+            <th style='padding: 8px; text-align: left;'>Operator</th>
+            <th style='padding: 8px; text-align: left;'>Description</th>
+            <th style='padding: 8px; text-align: left;'>Example</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>==</code></td>
+            <td style='padding: 8px;'>Equal to</td>
+            <td style='padding: 8px;'><code>a == b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>!=</code></td>
+            <td style='padding: 8px;'>Not equal to</td>
+            <td style='padding: 8px;'><code>a != b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>&gt;</code></td>
+            <td style='padding: 8px;'>Greater than</td>
+            <td style='padding: 8px;'><code>a &gt; b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>&gt;=</code></td>
+            <td style='padding: 8px;'>Greater than or equal</td>
+            <td style='padding: 8px;'><code>a &gt;= b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>&lt;</code></td>
+            <td style='padding: 8px;'>Less than</td>
+            <td style='padding: 8px;'><code>a &lt; b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>&lt;=</code></td>
+            <td style='padding: 8px;'>Less than or equal</td>
+            <td style='padding: 8px;'><code>a &lt;= b</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Logical Operators</h3>
+<table style='width: 100%; border-collapse: collapse; margin: 10px 0;'>
+    <thead>
+        <tr style='background: #2d2d30; border-bottom: 2px solid #007acc;'>
+            <th style='padding: 8px; text-align: left;'>Operator</th>
+            <th style='padding: 8px; text-align: left;'>Description</th>
+            <th style='padding: 8px; text-align: left;'>Example</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>&amp;&amp;</code></td>
+            <td style='padding: 8px;'>Logical AND</td>
+            <td style='padding: 8px;'><code>a &amp;&amp; b</code></td>
+        </tr>
+        <tr style='border-bottom: 1px solid #3e3e42;'>
+            <td style='padding: 8px;'><code>||</code></td>
+            <td style='padding: 8px;'>Logical OR</td>
+            <td style='padding: 8px;'><code>a || b</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Operator Precedence (Highest to Lowest)</h3>
+<ol>
+    <li>Parentheses <code>()</code></li>
+    <li>Multiplication <code>*</code>, Division <code>/</code></li>
+    <li>Addition <code>+</code>, Subtraction <code>-</code></li>
+    <li>Comparison <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, <code>&lt;=</code></li>
+    <li>Equality <code>==</code>, <code>!=</code></li>
+    <li>Logical AND <code>&amp;&amp;</code></li>
+    <li>Logical OR <code>||</code></li>
+    <li>Assignment <code>=</code></li>
+</ol>
+
+<hr/>
+
+<h2>📋 Complete Examples</h2>
+
+<h3>Example 1: Temperature Control</h3>
+<pre><code>StationeersDevice airConditioner = referenceDevice(d0);
+StationeersDevice tempSensor = referenceDevice(d1);
+
+Float temp = tempSensor.Temperature;
+temp = Math.convertToCelsius(temp);
+
+if (temp &gt;= 25) {
+    airConditioner.On = true;
+} else {
+    airConditioner.On = false;
+}</code></pre>
+
+<h3>Example 2: Pressure Management</h3>
+<pre><code>StationeersDevice pressureSensor = referenceDevice(d0);
+StationeersDevice vent = referenceDevice(d1);
+
+Float pressure = pressureSensor.Pressure;
+
+if (pressure &gt; 101325.0) {
+    vent.On = true;
+} else {
+    vent.On = false;
+}</code></pre>
+
+<h3>Example 3: Multiple Conditions</h3>
+<pre><code>StationeersDevice sensor = referenceDevice(d0);
+StationeersDevice heater = referenceDevice(d1);
+StationeersDevice cooler = referenceDevice(d2);
+
+Float temp = sensor.Temperature;
+temp = Math.convertToCelsius(temp);
+
+if (temp &lt; 20) {
+    heater.On = true;
+    cooler.On = false;
+} else {
+    heater.On = false;
+    cooler.On = true;
+}</code></pre>
+
+<h3>Example 4: Complex Logic</h3>
+<pre><code>StationeersDevice tempSensor = referenceDevice(d0);
+StationeersDevice pressureSensor = referenceDevice(d1);
+StationeersDevice safetyValve = referenceDevice(d2);
+
+Float temp = Math.convertToCelsius(tempSensor.Temperature);
+Float pressure = pressureSensor.Pressure;
+
+if (temp &gt; 50 &amp;&amp; pressure &gt; 150000.0) {
+    safetyValve.On = true;
+} else {
+    safetyValve.On = false;
+}</code></pre>
+
+<hr/>
+
+<h2>⚠️ Current Limitations</h2>
+<ul>
+    <li>❌ No loop support (while, for)</li>
+    <li>❌ No user-defined functions</li>
+    <li>❌ No arrays or complex data structures</li>
+    <li>❌ Global scope only (no nested scopes for variables)</li>
+    <li>❌ No string manipulation</li>
+    <li>❌ Limited to 6 device pins (d0-d5) plus db</li>
+</ul>
+
+<h2>✅ Supported Features</h2>
+<ul>
+    <li>✅ Type inference and explicit typing</li>
+    <li>✅ Device property access and modification</li>
+    <li>✅ Arithmetic operations</li>
+    <li>✅ Comparison operations</li>
+    <li>✅ Logical operations (AND, OR)</li>
+    <li>✅ If-else conditional statements</li>
+    <li>✅ Built-in conversion functions</li>
+    <li>✅ Boolean literals (true/false)</li>
+    <li>✅ Integer and Float literals</li>
+</ul>
+
+<hr/>
+
+<h2>🔧 Compiler Pipeline</h2>
+<p>Your code goes through these stages:</p>
+<ol>
+    <li><strong>Lexical Analysis</strong> - Breaks code into tokens</li>
+    <li><strong>Syntax Analysis</strong> - Builds Abstract Syntax Tree (AST)</li>
+    <li><strong>Semantic Analysis</strong> - Validates types and symbols</li>
+    <li><strong>IR Generation</strong> - Creates intermediate representation</li>
+    <li><strong>IR Optimization</strong> - Optimizes the intermediate code</li>
+    <li><strong>Code Generation</strong> - Produces MIPS assembly</li>
+</ol>
+
+<hr/>
+
+<h2>💡 Tips</h2>
+<ul>
+    <li>Use meaningful variable names for readability</li>
+    <li>Convert temperatures to Celsius for easier threshold values</li>
+    <li>Group related operations in blocks</li>
+    <li>Use parentheses to make precedence explicit</li>
+    <li>Check the Debug Info to understand how your code compiles</li>
+    <li>Temperature in Stationeers is in Kelvin by default (273.15 K = 0°C)</li>
+    <li>Pressure is in kPa (101325 kPa = 1 atmosphere)</li>
+</ul>
+
+<hr/>
+
+<p class='doc-footer' style='text-align: center; color: #888; margin-top: 20px; padding-top: 20px; border-top: 1px solid #3e3e42;'>
+    This language compiles to Stationeers IC10 MIPS assembly code.<br/>
+    <small>Version: 1.0 | Built with .NET 9.0</small>
+</p>
+";
+        }
+        catch (Exception ex)
+        {
+            documentationHtml = $"<p>Error loading documentation: {ex.Message}</p>";
+        }
+    }
+}
+

@@ -1,0 +1,48 @@
+.ast-node-wrapper {
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: #c9d1d9;
+}
+
+.ast-node-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    border-radius: 4px;
+}
+
+.ast-node-header:hover {
+    background: rgba(88, 166, 255, 0.1);
+}
+
+.ast-toggle {
+    color: #58a6ff;
+    font-weight: bold;
+    font-size: 0.8rem;
+    min-width: 12px;
+    display: inline-block;
+    user-select: none;
+}
+
+.ast-toggle-empty {
+    color: #484f58;
+    font-size: 0.6rem;
+}
+
+.ast-name {
+    color: #79c0ff;
+    font-weight: 600;
+}
+
+.ast-value {
+    color: #a5d6ff;
+    margin-left: 0.3rem;
+}
+
+.ast-children {
+    margin-left: 0;
+}
+

@@ -1,0 +1,48 @@
+@using CompilerWeb.Pages
+
+<div class="ast-node-wrapper" style="padding-left: @(Level * 20)px;">
+    <div class="ast-node-header" @onclick="ToggleExpand">
+        @if (Node.HasChildren)
+        {
+            <span class="ast-toggle">@(isExpanded ? "▼" : "▶")</span>
+        }
+        else
+        {
+            <span class="ast-toggle ast-toggle-empty">•</span>
+        }
+        <span class="ast-name">@Node.Name</span>
+        @if (!string.IsNullOrEmpty(Node.Value))
+        {
+            <span class="ast-value">= @Node.Value</span>
+        }
+    </div>
+    
+    @if (isExpanded && Node.HasChildren)
+    {
+        <div class="ast-children">
+            @foreach (var child in Node.Children)
+            {
+                <AstNodeComponent Node="@child" Level="@(Level + 1)" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public StCompiler.AstNode Node { get; set; } = null!;
+    
+    [Parameter]
+    public int Level { get; set; }
+    
+    private bool isExpanded = false;
+
+    private void ToggleExpand()
+    {
+        if (Node.HasChildren)
+        {
+            isExpanded = !isExpanded;
+        }
+    }
+}
+

@@ -1,0 +1,40 @@
+
+namespace Compiler.Lexer.Tokens;
+
+public enum TokenType
+{
+    Identifier,
+    Comma,
+    Keyword,
+    Number,
+    Float,
+    Minus,
+    Plus,
+    TrueKeyword,
+    Multiply,
+    Divide,
+    Equals,
+    Semicolon,
+    String,
+    Operator,
+    Delimiter,
+    Whitespace,
+    Comment,
+    CompileError,
+    EndOfFile,
+    LParen,
+    RParen,
+    DeviceProperty,
+    GreaterThan,
+    LessThan,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
+    EqualsEquals,
+    NotEquals,
+    LogicalAnd,
+    LogicalOr,
+    LBrace,
+    RBrace,
+    Dot,
+    FalseKeyword
+}
