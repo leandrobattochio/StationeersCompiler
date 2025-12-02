@@ -488,6 +488,12 @@ The Lexer (also called Scanner or Tokenizer) is responsible for converting sourc
 | `MinusToken` | Subtraction | `-` |
 | `MultiplyToken` | Multiplication | `*` |
 | `DivideToken` | Division | `/` |
+| `PlusEqualsToken` | Addition with assignment | `+=` |
+| `MinusEqualsToken` | Subtraction with assignment | `-=` |
+| `MultiplyEqualsToken` | Multiplication with assignment | `*=` |
+| `DivideEqualsToken` | Division with assignment | `/=` |
+| `PlusPlusToken` | Increment | `++` |
+| `MinusMinusToken` | Decrement | `--` |
 | `LeftParentToken` | Left parenthesis | `(` |
 | `RightParentToken` | Right parenthesis | `)` |
 | `LeftBraceToken` | Left brace | `{` |
@@ -570,7 +576,8 @@ term            → factor ( ("+" | "-") factor )*
 
 factor          → unary ( ("*" | "/") unary )*
 
-unary           → primary
+unary           → ("-" | "++" | "--") unary
+                | primary ("++" | "--")?
 
 primary         → NUMBER
                 | FLOAT
@@ -620,11 +627,18 @@ public interface IExprVisitor<T>
     T VisitNumber(NumberExpr expr);
     T VisitFloat(FloatExpr expr);
     T VisitBoolean(BooleanExpr expr);
+    T VisitBinary(BinaryExpr expr);
     T VisitGroup(GroupExpr expr);
     T VisitCall(CallExpr expr);
     T VisitAssignment(AssignmentExpr expr);
+    T VisitCompoundAssignment(CompoundAssignmentExpr expr);
+    T VisitIncrementDecrement(IncrementDecrementExpr expr);
     T VisitMemberAccess(MemberAccessExpr expr);
+    T VisitMemberAssignment(MemberAssignmentExpr expr);
+    T VisitMethodCall(MethodCallExpr expr);
+    T VisitStaticMethodCall(StaticMethodCallExpr expr);
     T VisitLoadDevice(LoadDeviceExpr expr);
+    T VisitIdentifier(IdentifierExpr expr);
 }
 
 public interface IStmtVisitor<T>
@@ -896,23 +910,34 @@ t0 = t0 - 273.15            // Operate directly on t0
 
 #### Optimizer Structure:
 
+The optimizer uses the **Strategy pattern** to apply multiple optimization strategies:
+
 ```csharp
 public class IrOptimizer
 {
+    private readonly List<IOptimizationStrategy> _strategies =
+    [
+        new ConstantFoldingOptimize(),  // Eliminate unnecessary LoadConsts
+        new BinOpMoveOptimize(),         // Eliminate redundant Moves
+    ];
+
     public IrProgram Optimize(IrProgram program)
     {
-        // Apply peephole optimizations
-        OptimizeLoadBinaryMove(program);
-        return program;
-    }
-    
-    private void OptimizeLoadBinaryMove(IrProgram program)
-    {
-        // Detect pattern: Load → Binary → Move
-        // Remove the Move and adjust Binary to write to correct destination
+        return _strategies.Aggregate(program, (current, strategy) => strategy.Apply(current));
     }
 }
 ```
+
+Each strategy implements the `IOptimizationStrategy` interface:
+
+```csharp
+public interface IOptimizationStrategy
+{
+    IrProgram Apply(IrProgram program);
+}
+```
+
+For more details about optimizations, see the [Code Optimizations](#code-optimizations) section.
 
 #### Usage:
 
@@ -1693,11 +1718,107 @@ sensor.On = true;
 2. **Builder Pattern** - For IR construction
 3. **Strategy Pattern** - For register allocation
 
+### Code Optimizations
+
+The compiler implements optimizations in the intermediate representation (IR) through the **Strategy** pattern, allowing multiple optimization strategies to be applied in a modular and extensible way.
+
+#### Available Optimization Strategies
+
+##### 1. **ConstantFoldingOptimize**
+Removes unnecessary `LoadConst` instructions when constants can be used directly in operations.
+
+**Example:**
+```
+Before optimization:
+  mov t2 20        # Load constant into temporary register
+  sub t3 r0 t2     # Use temporary register
+  mov r0 t3        # Move result to final register
+
+After ConstantFoldingOptimize:
+  sub t3 r0 20     # Use constant directly
+  mov r0 t3        # Move result to final register
+```
+
+**How it works:**
+1. Identifies all `LoadConst` instructions that load constants into temporary registers
+2. Replaces references to these temporary registers with the direct constant value
+3. Removes `LoadConst` instructions that are no longer needed
+
+##### 2. **BinOpMoveOptimize**
+Eliminates redundant pairs of binary operation followed by `Move` when the result can be stored directly in the destination register.
+
+**Example:**
+```
+Before optimization:
+  sub t3 r0 20     # Binary operation
+  mov r0 t3        # Unnecessary move (destination = left operand)
+
+After BinOpMoveOptimize:
+  sub r0 r0 20     # Direct operation on final register
+```
+
+**How it works:**
+1. Detects patterns where a `BinaryOpInstruction` is followed by a `MoveInstruction`
+2. Checks if the move destination is the same as the binary operation's left operand
+3. Combines both into a single instruction that operates directly on the final register
+
+#### Optimization Pipeline
+
+Strategies are applied in sequential order:
+
+```csharp
+private readonly List<IOptimizationStrategy> _strategies =
+[
+    new ConstantFoldingOptimize(),  // 1st: Eliminate unnecessary LoadConsts
+    new BinOpMoveOptimize(),         // 2nd: Eliminate redundant Moves
+];
+```
+
+**Complete Example:**
+```javascript
+// Source code
+var a = 10;
+a -= 20;
+
+// Unoptimized IR
+mov t0 10        # LoadConst
+mov t1 20        # LoadConst
+sub t2 t0 t1     # BinaryOp
+mov t0 t2        # Move
+
+// After ConstantFoldingOptimize
+sub t2 t0 20     # Inline constant
+
+// After BinOpMoveOptimize (final result)
+sub t0 t0 20     # Optimized direct operation
+```
+
+#### Extensibility
+
+To add a new optimization strategy:
+
+1. Create a class that implements `IOptimizationStrategy`
+2. Implement the `Apply(IrProgram program)` method
+3. Add the strategy to the list in `IrOptimizer`
+
+```csharp
+public class MyNewOptimization : IOptimizationStrategy
+{
+    public IrProgram Apply(IrProgram program)
+    {
+        // Your optimization logic here
+        return program;
+    }
+}
+```
+
 ### Implemented Algorithms
 
 1. **Recursive Descent Parsing** - Top-down parser
 2. **Liveness Analysis** - Variable lifetime analysis
 3. **Register Allocation** - Linear register allocation
+4. **Constant Folding** - Compile-time constant optimization
+5. **Dead Code Elimination** - Removal of unused instructions (via optimizations)
 
 ### Compilation Phases
 

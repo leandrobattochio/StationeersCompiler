@@ -488,6 +488,12 @@ O Lexer (também chamado de Scanner ou Tokenizer) é responsável por converter 
 | `MinusToken` | Subtração | `-` |
 | `MultiplyToken` | Multiplicação | `*` |
 | `DivideToken` | Divisão | `/` |
+| `PlusEqualsToken` | Adição com atribuição | `+=` |
+| `MinusEqualsToken` | Subtração com atribuição | `-=` |
+| `MultiplyEqualsToken` | Multiplicação com atribuição | `*=` |
+| `DivideEqualsToken` | Divisão com atribuição | `/=` |
+| `PlusPlusToken` | Incremento | `++` |
+| `MinusMinusToken` | Decremento | `--` |
 | `LeftParentToken` | Parêntese esquerdo | `(` |
 | `RightParentToken` | Parêntese direito | `)` |
 | `LeftBraceToken` | Chave esquerda | `{` |
@@ -569,7 +575,8 @@ term            → factor ( ("+" | "-") factor )*
 
 factor          → unary ( ("*" | "/") unary )*
 
-unary           → primary
+unary           → ("-" | "++" | "--") unary
+                | primary ("++" | "--")?
 
 primary         → NUMBER
                 | FLOAT
@@ -593,8 +600,10 @@ TYPE_NAME       → "Int" | "Float" | "Boolean" | "StationeersDevice"
 - `FloatExpr` - Número decimal literal
 - `BooleanExpr` - Valor booleano (true/false)
 - `IdentifierExpr` - Identificador
-- `BinaryExpr` - Operação binária
-- `AssignmentExpr` - Atribuição a variável
+- `BinaryExpr` - Operação binária (+, -, *, /, ==, !=, <, >, <=, >=, &&, ||)
+- `AssignmentExpr` - Atribuição a variável (=)
+- `CompoundAssignmentExpr` - Atribuição composta (+=, -=, *=, /=)
+- `IncrementDecrementExpr` - Incremento/decremento (++, --)
 - `GroupExpr` - Expressão agrupada com parênteses
 - `CallExpr` - Chamada de função
 - `MemberAccessExpr` - Acesso a propriedade (objeto.propriedade)
@@ -619,11 +628,18 @@ public interface IExprVisitor<T>
     T VisitNumber(NumberExpr expr);
     T VisitFloat(FloatExpr expr);
     T VisitBoolean(BooleanExpr expr);
+    T VisitBinary(BinaryExpr expr);
     T VisitGroup(GroupExpr expr);
     T VisitCall(CallExpr expr);
     T VisitAssignment(AssignmentExpr expr);
+    T VisitCompoundAssignment(CompoundAssignmentExpr expr);
+    T VisitIncrementDecrement(IncrementDecrementExpr expr);
     T VisitMemberAccess(MemberAccessExpr expr);
+    T VisitMemberAssignment(MemberAssignmentExpr expr);
+    T VisitMethodCall(MethodCallExpr expr);
+    T VisitStaticMethodCall(StaticMethodCallExpr expr);
     T VisitLoadDevice(LoadDeviceExpr expr);
+    T VisitIdentifier(IdentifierExpr expr);
 }
 
 public interface IStmtVisitor<T>
@@ -895,23 +911,34 @@ t0 = t0 - 273.15            // Opera diretamente em t0
 
 #### Estrutura do Optimizer:
 
+O otimizador usa o **padrão Strategy** para aplicar múltiplas estratégias de otimização:
+
 ```csharp
 public class IrOptimizer
 {
+    private readonly List<IOptimizationStrategy> _strategies =
+    [
+        new ConstantFoldingOptimize(),  // Elimina LoadConst desnecessários
+        new BinOpMoveOptimize(),         // Elimina Moves redundantes
+    ];
+
     public IrProgram Optimize(IrProgram program)
     {
-        // Aplica otimizações peephole
-        OptimizeLoadBinaryMove(program);
-        return program;
-    }
-    
-    private void OptimizeLoadBinaryMove(IrProgram program)
-    {
-        // Detecta padrão: Load → Binary → Move
-        // Remove o Move e ajusta o Binary para escrever no destino correto
+        return _strategies.Aggregate(program, (current, strategy) => strategy.Apply(current));
     }
 }
 ```
+
+Cada estratégia implementa a interface `IOptimizationStrategy`:
+
+```csharp
+public interface IOptimizationStrategy
+{
+    IrProgram Apply(IrProgram program);
+}
+```
+
+Para mais detalhes sobre as otimizações, consulte a seção [Otimizações de Código](#otimizações-de-código).
 
 #### Uso:
 
@@ -1648,6 +1675,36 @@ StationeersDevice sensor = referenceDevice(d0);
 **Aritméticos:** `+`, `-`, `*`, `/`
 **Comparação:** `==`, `!=`, `<`, `<=`, `>`, `>=`
 **Lógicos:** `&&`, `||`
+**Atribuição Composta:** `+=`, `-=`, `*=`, `/=`
+**Incremento/Decremento:** `++`, `--` (prefixo e sufixo)
+
+#### Operadores de Atribuição Composta
+
+Os operadores compostos permitem realizar uma operação aritmética e atribuição de forma mais concisa:
+
+```javascript
+var a = 10;
+a += 5;   // equivalente a: a = a + 5;  (a = 15)
+a -= 3;   // equivalente a: a = a - 3;  (a = 12)
+a *= 2;   // equivalente a: a = a * 2;  (a = 24)
+a /= 4;   // equivalente a: a = a / 4;  (a = 6)
+```
+
+#### Operadores de Incremento e Decremento
+
+```javascript
+var contador = 0;
+
+// Pós-incremento/decremento (usa o valor atual, depois incrementa)
+contador++;  // equivalente a: contador = contador + 1;
+contador--;  // equivalente a: contador = contador - 1;
+
+// Pré-incremento/decremento (incrementa, depois usa o valor)
+++contador;  // equivalente a: contador = contador + 1;
+--contador;  // equivalente a: contador = contador - 1;
+```
+
+**Nota:** Tanto a forma prefixo quanto sufixo incrementam/decrementam a variável. A diferença no valor retornado só é relevante quando usados em expressões, mas atualmente o compilador trata ambos de forma equivalente em statements.
 
 #### Estruturas de Controle
 
@@ -1690,13 +1747,109 @@ sensor.On = true;
 
 1. **Visitor Pattern** - Para traversal da AST
 2. **Builder Pattern** - Para construção de IR
-3. **Strategy Pattern** - Para alocação de registradores
+3. **Strategy Pattern** - Para otimizações de IR e alocação de registradores
+
+### Otimizações de Código
+
+O compilador implementa otimizações na representação intermediária (IR) através do padrão **Strategy**, permitindo aplicar múltiplas estratégias de otimização de forma modular e extensível.
+
+#### Estratégias de Otimização Disponíveis
+
+##### 1. **ConstantFoldingOptimize**
+Remove instruções `LoadConst` desnecessárias quando constantes podem ser usadas diretamente nas operações.
+
+**Exemplo:**
+```
+Antes da otimização:
+  mov t2 20        # Carrega constante em registrador temporário
+  sub t3 r0 t2     # Usa o registrador temporário
+  mov r0 t3        # Move resultado para registrador final
+
+Após ConstantFoldingOptimize:
+  sub t3 r0 20     # Usa constante diretamente
+  mov r0 t3        # Move resultado para registrador final
+```
+
+**Como funciona:**
+1. Identifica todas as instruções `LoadConst` que carregam constantes em registradores temporários
+2. Substitui referências a esses registradores temporários pelo valor constante direto
+3. Remove as instruções `LoadConst` que não são mais necessárias
+
+##### 2. **BinOpMoveOptimize**
+Elimina pares redundantes de operação binária seguida de `Move` quando o resultado pode ser armazenado diretamente no registrador de destino.
+
+**Exemplo:**
+```
+Antes da otimização:
+  sub t3 r0 20     # Operação binária
+  mov r0 t3        # Move desnecessário (destino = operando esquerdo)
+
+Após BinOpMoveOptimize:
+  sub r0 r0 20     # Operação direta no registrador final
+```
+
+**Como funciona:**
+1. Detecta padrões onde uma `BinaryOpInstruction` é seguida por uma `MoveInstruction`
+2. Verifica se o destino do `Move` é o mesmo que o operando esquerdo da operação binária
+3. Combina ambas em uma única instrução que opera diretamente no registrador final
+
+#### Pipeline de Otimização
+
+As estratégias são aplicadas em ordem sequencial:
+
+```csharp
+private readonly List<IOptimizationStrategy> _strategies =
+[
+    new ConstantFoldingOptimize(),  // 1º: Elimina LoadConst desnecessários
+    new BinOpMoveOptimize(),         // 2º: Elimina Moves redundantes
+];
+```
+
+**Exemplo Completo:**
+```javascript
+// Código fonte
+var a = 10;
+a -= 20;
+
+// IR não otimizado
+mov t0 10        # LoadConst
+mov t1 20        # LoadConst
+sub t2 t0 t1     # BinaryOp
+mov t0 t2        # Move
+
+// Após ConstantFoldingOptimize
+sub t2 t0 20     # Constante inline
+
+// Após BinOpMoveOptimize (resultado final)
+sub t0 t0 20     # Operação direta otimizada
+```
+
+#### Extensibilidade
+
+Para adicionar uma nova estratégia de otimização:
+
+1. Crie uma classe que implemente `IOptimizationStrategy`
+2. Implemente o método `Apply(IrProgram program)`
+3. Adicione a estratégia à lista em `IrOptimizer`
+
+```csharp
+public class MinhaNovaOtimizacao : IOptimizationStrategy
+{
+    public IrProgram Apply(IrProgram program)
+    {
+        // Sua lógica de otimização aqui
+        return program;
+    }
+}
+```
 
 ### Algoritmos Implementados
 
 1. **Recursive Descent Parsing** - Parser top-down
 2. **Liveness Analysis** - Análise de tempo de vida de variáveis
 3. **Register Allocation** - Alocação linear de registradores
+4. **Constant Folding** - Otimização de constantes em tempo de compilação
+5. **Dead Code Elimination** - Remoção de instruções não utilizadas (via otimizações)
 
 ### Fases de Compilação
 
