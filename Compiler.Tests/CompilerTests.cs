@@ -18,7 +18,7 @@ public class CompilerTests
                    Float pressure = airSensor.Pressure;
 
                    temp = Math.convertToCelsius(temp);
-                   if (temp >= 25 && pressure < 101325.0) {
+                   if (temp >= 25.0 && pressure < 101325.0) {
                        airConditioner.On = true;
                    } else {
                        airConditioner.On = false;
