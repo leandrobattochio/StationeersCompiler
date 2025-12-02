@@ -66,7 +66,7 @@ public static class CodeGenerator
                     break;
 
                 case StoreToDeviceInstruction std:
-                    EmitStoreToDevice(std, lines);
+                    EmitStoreToDevice(std, i, regAlloc, lines);
                     break;
 
                 case MoveInstruction mov:
@@ -203,9 +203,14 @@ public static class CodeGenerator
         lines.Add($"{lbl.Label}:");
     }
 
-    private static void EmitStoreToDevice(StoreToDeviceInstruction std, List<string> lines)
+    private static void EmitStoreToDevice(
+        StoreToDeviceInstruction std,
+        int instrIndex,
+        RegisterAllocator regAlloc,
+        List<string> lines)
     {
-        lines.Add($"s {std.Device} {std.Property} {std.Value}");
+        var value = ResolveOperand(std.Value, instrIndex, regAlloc);
+        lines.Add($"s {std.Device} {std.Property} {value}");
     }
 
     private static void EmitMove(

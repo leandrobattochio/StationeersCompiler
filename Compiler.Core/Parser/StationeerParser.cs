@@ -1,4 +1,4 @@
-﻿﻿using Compiler.Domain.Ast.Expressions;
+﻿using Compiler.Domain.Ast.Expressions;
 using Compiler.Domain.Ast.Statements;
 using Compiler.Lexer;
 using Compiler.Lexer.Tokens;
@@ -77,7 +77,7 @@ public sealed class StationeerParser
 
         // Peek at next token
         var nextToken = Peek();
-        
+
         // If next is also an identifier, this is likely a type declaration
         // e.g., "StationeersDevice sensor" or "Float temp" or "Int value"
         return nextToken.Type == TokenType.Identifier;
@@ -95,16 +95,16 @@ public sealed class StationeerParser
         Eat(TokenType.LParen);
         var condition = ParseExpression();
         Eat(TokenType.RParen);
-        
+
         var thenBranch = ParseStatement();
-        
+
         Stmt? elseBranch = null;
         if (CurrentToken is ElseKeywordToken)
         {
             Eat(TokenType.Keyword);
             elseBranch = ParseStatement();
         }
-        
+
         return new IfStmt(condition, thenBranch, elseBranch);
     }
 
@@ -112,12 +112,12 @@ public sealed class StationeerParser
     {
         Eat(TokenType.LBrace);
         var statements = new List<Stmt>();
-        
+
         while (CurrentToken.Type != TokenType.RBrace && CurrentToken.Type != TokenType.EndOfFile)
         {
             statements.Add(ParseStatement());
         }
-        
+
         Eat(TokenType.RBrace);
         return new BlockStmt(statements);
     }
@@ -126,7 +126,7 @@ public sealed class StationeerParser
     {
         // Can be either "var name = ..." or "TypeName name = ..."
         string? explicitType = null;
-        
+
         if (CurrentToken is VarKeywordToken)
         {
             Eat(TokenType.Keyword);
@@ -155,6 +155,16 @@ public sealed class StationeerParser
     private Stmt ParseExprStatement()
     {
         var expr = ParseExpression();
+
+        // Handle postfix increment/decrement
+        if (expr is IdentifierExpr identifier &&
+            CurrentToken.Type is TokenType.PlusPlus or TokenType.MinusMinus)
+        {
+            var op = CurrentToken.Value; // "++" or "--"
+            Eat(CurrentToken.Type);
+            expr = new IncrementDecrementExpr(identifier.Name, op, false);
+        }
+
         Eat(TokenType.Semicolon);
         return new ExprStmt(expr);
     }
@@ -185,6 +195,21 @@ public sealed class StationeerParser
                 throw new Exception("Assignment target must be an identifier or member access");
             }
         }
+        else if (CurrentToken.Type is TokenType.PlusEquals or TokenType.MinusEquals
+                 or TokenType.MultiplyEquals or TokenType.DivideEquals)
+        {
+            if (expr is IdentifierExpr identifier)
+            {
+                var op = CurrentToken.Value[0].ToString(); // Extract '+', '-', '*', or '/'
+                Eat(CurrentToken.Type);
+                var value = ParseAssignment();
+                return new CompoundAssignmentExpr(identifier.Name, op, value);
+            }
+            else
+            {
+                throw new Exception("Compound assignment target must be an identifier");
+            }
+        }
 
         return expr;
     }
@@ -192,7 +217,7 @@ public sealed class StationeerParser
     private Expr ParseLogicalOr()
     {
         var expr = ParseLogicalAnd();
-        
+
         while (CurrentToken.Type == TokenType.LogicalOr)
         {
             var op = CurrentToken.Value;
@@ -200,14 +225,14 @@ public sealed class StationeerParser
             var right = ParseLogicalAnd();
             expr = new BinaryExpr(expr, op, right);
         }
-        
+
         return expr;
     }
 
     private Expr ParseLogicalAnd()
     {
         var expr = ParseComparison();
-        
+
         while (CurrentToken.Type == TokenType.LogicalAnd)
         {
             var op = CurrentToken.Value;
@@ -215,15 +240,15 @@ public sealed class StationeerParser
             var right = ParseComparison();
             expr = new BinaryExpr(expr, op, right);
         }
-        
+
         return expr;
     }
 
     private Expr ParseComparison()
     {
         var expr = ParseTerm();
-        
-        while (CurrentToken.Type is TokenType.GreaterThan or TokenType.LessThan 
+
+        while (CurrentToken.Type is TokenType.GreaterThan or TokenType.LessThan
                or TokenType.GreaterThanOrEqual or TokenType.LessThanOrEqual
                or TokenType.EqualsEquals or TokenType.NotEquals)
         {
@@ -232,7 +257,7 @@ public sealed class StationeerParser
             var right = ParseTerm();
             expr = new BinaryExpr(expr, op, right);
         }
-        
+
         return expr;
     }
 
@@ -243,6 +268,21 @@ public sealed class StationeerParser
             Eat(TokenType.Minus);
             var right = ParseUnary();
             return new BinaryExpr(new NumberExpr(0), "-", right);
+        }
+
+        // Handle prefix increment/decrement
+        if (CurrentToken.Type is TokenType.PlusPlus or TokenType.MinusMinus)
+        {
+            var op = CurrentToken.Value;
+            Eat(CurrentToken.Type);
+
+            if (CurrentToken.Type != TokenType.Identifier)
+                throw new Exception("Increment/decrement operator must be followed by an identifier");
+
+            var name = CurrentToken.Value;
+            Eat(TokenType.Identifier);
+
+            return new IncrementDecrementExpr(name, op, true);
         }
 
         return ParsePrimary();
@@ -307,7 +347,7 @@ public sealed class StationeerParser
             Eat(TokenType.Dot);
             var memberName = CurrentToken.Value;
             Eat(TokenType.Identifier);
-            
+
             // Check if this is a method call (has parentheses)
             if (CurrentToken.Type == TokenType.LParen)
             {
@@ -322,17 +362,16 @@ public sealed class StationeerParser
                         if (CurrentToken.Type != TokenType.Comma)
                             break;
                         Eat(TokenType.Comma);
-                    }
-                    while (true);
+                    } while (true);
                 }
 
                 Eat(TokenType.RParen);
-                
+
                 // Distinguish between static method call (Math.method) and instance method call (device.method)
                 // Check if the base is a known global object
                 var isStatic = false;
                 string? globalObjectName = null;
-                
+
                 if (expr is IdentifierExpr identExpr)
                 {
                     if (IsGlobalObject(identExpr.Name))
@@ -341,7 +380,7 @@ public sealed class StationeerParser
                         globalObjectName = identExpr.Name;
                     }
                 }
-                
+
                 if (isStatic && globalObjectName != null)
                 {
                     // This is static method call like Math.convertToCelsius()
@@ -353,7 +392,7 @@ public sealed class StationeerParser
                     return new MethodCallExpr(expr, memberName, args);
                 }
             }
-            
+
             // This is property access
             expr = new MemberAccessExpr(expr, memberName);
         }
@@ -373,8 +412,7 @@ public sealed class StationeerParser
                     if (CurrentToken.Type != TokenType.Comma)
                         break;
                     Eat(TokenType.Comma);
-                }
-                while (true);
+                } while (true);
             }
 
             Eat(TokenType.RParen);
@@ -396,6 +434,8 @@ public sealed class StationeerParser
     {
         return CurrentToken.Type switch
         {
+            TokenType.StationeerConstant => ParseStationeerConstant(),
+            TokenType.String => ParseString(),
             TokenType.Number => ParseNumber(),
             TokenType.Float => ParseFloat(),
             TokenType.TrueKeyword => ParseBoolean(true),
@@ -405,6 +445,20 @@ public sealed class StationeerParser
             TokenType.DeviceProperty => ParseDeviceProperty(),
             _ => throw new Exception($"Unexpected token {CurrentToken.Type}")
         };
+    }
+
+    private Expr ParseStationeerConstant()
+    {
+        var tok = (StationeerConstantToken)CurrentToken;
+        Eat(TokenType.StationeerConstant);
+        return new StationeerConstantExpr(tok.Value);
+    }
+
+    private Expr ParseString()
+    {
+        var tok = (StringToken)CurrentToken;
+        Eat(TokenType.String);
+        return new StringExpr(tok.Value);
     }
 
     private Expr ParseBoolean(bool value)
@@ -420,4 +474,3 @@ public sealed class StationeerParser
         return new DevicePropertyExpr(propertyName);
     }
 }
-

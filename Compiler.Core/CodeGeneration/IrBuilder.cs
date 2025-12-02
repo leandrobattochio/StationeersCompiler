@@ -142,6 +142,16 @@ public sealed class IrBuilder :
     public string VisitGroup(GroupExpr expr)
         => expr.Inner.Accept(this);
 
+    public string VisitString(StringExpr expr)
+    {
+        return expr.Value;
+    }
+
+    public string VisitStationeerConstant(StationeerConstantExpr expr)
+    {
+        return expr.Value;
+    }
+
     public string VisitDevice(DeviceExpr expr)
     {
         return expr.DeviceName;
@@ -273,5 +283,43 @@ public sealed class IrBuilder :
         // Currently no instance methods are defined
         // Methods are handled by the semantic analyzer
         throw new Exception($"Unknown method '{expr.MethodName}'");
+    }
+
+    public string VisitCompoundAssignment(CompoundAssignmentExpr expr)
+    {
+        // Get the current variable register
+        if (!_variableRegisters.TryGetValue(expr.Name, out var varReg))
+            throw new Exception($"Variable '{expr.Name}' not found");
+
+        // Evaluate the right-hand side value
+        var valueReg = expr.Value.Accept(this);
+
+        // Generate the binary operation: varReg = varReg op valueReg
+        var resultReg = Temp();
+        _instructions.Add(new BinaryOpInstruction(resultReg, varReg, valueReg, expr.Op));
+
+        // Move result back to the variable's register
+        _instructions.Add(new MoveInstruction(varReg, resultReg));
+
+        return varReg;
+    }
+
+    public string VisitIncrementDecrement(IncrementDecrementExpr expr)
+    {
+        // Get the current variable register
+        if (!_variableRegisters.TryGetValue(expr.Name, out var varReg))
+            throw new Exception($"Variable '{expr.Name}' not found");
+
+        // Determine the operation (++ -> +, -- -> -)
+        var op = expr.Op == "++" ? "+" : "-";
+
+        // Generate the operation: varReg = varReg op 1
+        var resultReg = Temp();
+        _instructions.Add(new BinaryOpInstruction(resultReg, varReg, "1", op));
+
+        // Move result back to the variable's register
+        _instructions.Add(new MoveInstruction(varReg, resultReg));
+
+        return varReg;
     }
 }

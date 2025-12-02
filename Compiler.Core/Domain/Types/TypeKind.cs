@@ -9,9 +9,8 @@ public enum TypeKind
     Device,
     Void,
     StationeersDevice,
-    Battery,
-    Sensor,
-    Object,
-    Boolean
+    Boolean,
+    String,
+    StationeerConstant
 }
 

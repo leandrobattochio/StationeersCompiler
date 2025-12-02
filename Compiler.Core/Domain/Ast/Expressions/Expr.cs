@@ -1,4 +1,4 @@
-﻿﻿using Compiler.Domain.Ast.Visitors;
+﻿using Compiler.Domain.Ast.Visitors;
 
 namespace Compiler.Domain.Ast.Expressions;
 

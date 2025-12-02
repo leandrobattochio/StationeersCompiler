@@ -7,6 +7,7 @@ public class IrOptimizer
 {
     private readonly List<IOptimizationStrategy> _strategies =
     [
+        new ConstantFoldingOptimize(),
         new BinOpMoveOptimize(),
     ];
 

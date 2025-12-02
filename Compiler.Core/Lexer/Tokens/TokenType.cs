@@ -36,5 +36,12 @@ public enum TokenType
     LBrace,
     RBrace,
     Dot,
-    FalseKeyword
+    FalseKeyword,
+    PlusEquals,
+    MinusEquals,
+    MultiplyEquals,
+    DivideEquals,
+    PlusPlus,
+    MinusMinus,
+    StationeerConstant
 }

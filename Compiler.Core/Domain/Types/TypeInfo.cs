@@ -26,6 +26,8 @@ public sealed class TypeInfo
 
     public static readonly TypeInfo Void = new(TypeKind.Void);
     public static readonly TypeInfo Int = new(TypeKind.Int);
+    public static readonly TypeInfo StationeerConstant = new(TypeKind.StationeerConstant);
+    public static readonly TypeInfo String = new(TypeKind.String);
     public static readonly TypeInfo Boolean = new(TypeKind.Boolean);
     public static readonly TypeInfo Float = new(TypeKind.Float);
     public static readonly TypeInfo Error = new(TypeKind.Error);

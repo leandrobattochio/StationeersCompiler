@@ -17,8 +17,8 @@ public sealed class SemanticAnalyzer :
     public SemanticAnalyzer()
     {
         _symbols.DeclareFunction("sleep", [], TypeInfo.Void);
-        _symbols.DeclareFunction("referenceDevice", new List<TypeInfo> { TypeInfo.Device }, TypeInfo.StationeersDevice);
-        _symbols.DeclareFunction("convertToCelsius", new List<TypeInfo> { TypeInfo.Int }, TypeInfo.Int);
+        _symbols.DeclareFunction("referenceDevice", [TypeInfo.Device], TypeInfo.StationeersDevice);
+        _symbols.DeclareFunction("convertToCelsius", [TypeInfo.Int], TypeInfo.Int);
     }
 
     public void Analyze(List<Stmt> statements)
@@ -140,6 +140,22 @@ public sealed class SemanticAnalyzer :
         var left = expr.Left.Accept(this);
         var right = expr.Right.Accept(this);
 
+        var isComparison = expr.Op is ">" or "<" or ">=" or "<=" or "==" or "!=";
+
+        if (isComparison)
+        {
+            if ((left.Kind != TypeKind.Int && left.Kind != TypeKind.Float) ||
+                (right.Kind != TypeKind.Int && right.Kind != TypeKind.Float))
+            {
+                throw new Exception($"Comparison operators require numeric types. Got {left.Kind} and {right.Kind}");
+            }
+
+            return left.Kind != right.Kind
+                ? throw new Exception(
+                    $"Comparison requires both sides to have the same type. Got {left.Kind} and {right.Kind}")
+                : TypeInfo.Boolean;
+        }
+
         // Both operands must be numeric (Int or Float)
         if ((left.Kind != TypeKind.Int && left.Kind != TypeKind.Float) ||
             (right.Kind != TypeKind.Int && right.Kind != TypeKind.Float))
@@ -158,6 +174,12 @@ public sealed class SemanticAnalyzer :
 
     public TypeInfo VisitDevice(DeviceExpr expr)
         => TypeInfo.Int;
+
+    public TypeInfo VisitStationeerConstant(StationeerConstantExpr expr)
+        => TypeInfo.StationeerConstant;
+
+    public TypeInfo VisitString(StringExpr expr)
+        => TypeInfo.String;
 
     public TypeInfo VisitLoadDevice(LoadDeviceExpr expr)
     {
@@ -393,5 +415,35 @@ public sealed class SemanticAnalyzer :
 
         // Return the method's return type
         return method.ReturnType;
+    }
+
+    public TypeInfo VisitCompoundAssignment(CompoundAssignmentExpr expr)
+    {
+        var varType = _symbols.Lookup(expr.Name);
+        var valueType = expr.Value.Accept(this);
+
+        if ((varType.Kind != TypeKind.Int && varType.Kind != TypeKind.Float) ||
+            (valueType.Kind != TypeKind.Int && valueType.Kind != TypeKind.Float))
+        {
+            throw new Exception(
+                $"Compound assignment requires numeric types. Variable '{expr.Name}' is {varType.Kind.ToString()}, value is {valueType.Kind.ToString()}");
+        }
+
+        // Result type matches the variable type
+        return varType;
+    }
+
+    public TypeInfo VisitIncrementDecrement(IncrementDecrementExpr expr)
+    {
+        var varType = _symbols.Lookup(expr.Name);
+
+        // Variable must be a numeric type (Int or Float)
+        if (varType.Kind != TypeKind.Int && varType.Kind != TypeKind.Float)
+        {
+            throw new Exception(
+                $"Increment/decrement operator requires a numeric type. Variable '{expr.Name}' is {varType.Kind}");
+        }
+
+        return varType;
     }
 }
