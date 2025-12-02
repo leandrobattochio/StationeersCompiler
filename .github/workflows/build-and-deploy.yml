@@ -51,7 +51,10 @@ jobs:
 
       - name: Restore dependencies
         run: dotnet restore StationeersCompiler.sln
-
+        
+      - name: Build solution
+        run: dotnet build StationeersCompiler.sln --configuration Release --no-restore
+        
       - name: Run tests
         run: dotnet test Compiler.Tests/Compiler.Tests.csproj --configuration Release --no-build --verbosity normal
         
