@@ -35,13 +35,25 @@ jobs:
       
     - name: Build solution
       run: dotnet build StationeersCompiler.sln --configuration Release --no-restore
-      
-    - name: Run tests
-      run: dotnet test Compiler.Tests/Compiler.Tests.csproj --configuration Release --no-build --verbosity normal
-      
-    - name: Build CLI
-      run: dotnet build CompilerCLI/CompilerCLI.csproj --configuration Release --no-restore
 
+  tests:
+    name: Test Solution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore StationeersCompiler.sln
+
+      - name: Run tests
+        run: dotnet test Compiler.Tests/Compiler.Tests.csproj --configuration Release --no-build --verbosity normal
+        
   publish-blazor:
     name: Publish Blazor WASM
     runs-on: ubuntu-latest
