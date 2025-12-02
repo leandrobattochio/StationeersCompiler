@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Compiler.Lexer.Tokens;
 
 namespace Compiler.Lexer;
@@ -11,12 +12,26 @@ public class StationeerLexer
     public StationeerLexer(string src) => _src = src;
 
     private char Current => _pos < _src.Length ? _src[_pos] : '\0';
+    private char Peek() => _pos + 1 < _src.Length ? _src[_pos + 1] : '\0';
+
     private void Advance() => _pos++;
+
+    private void AdvanceUntilNextLine()
+    {
+        while (Current != '\n' && Current != '\0')
+            Advance();
+
+        while (char.IsWhiteSpace(Current))
+            Advance();
+    }
 
     public Token NextToken()
     {
-        while (char.IsWhiteSpace(Current) || Current == '#')
+        while (char.IsWhiteSpace(Current))
             Advance();
+
+        while (Current == '#')
+            AdvanceUntilNextLine();
         
         if (Current == '\0')
         {
@@ -77,7 +92,7 @@ public class StationeerLexer
                 '!' => HandleExclamation(),
                 '&' => HandleAmpersand(),
                 '|' => HandlePipe(),
-                _ => new LexerErrorToken($"Unexpected char '{Current}'", _pos)
+                _ => throw new Exception($"Unexpected char '{Current}' on pos {_pos}")
             };
 
             _lastToken = result;
@@ -231,8 +246,6 @@ public class StationeerLexer
 
         return new MinusToken(start);
     }
-
-    private char Peek() => _pos + 1 < _src.Length ? _src[_pos + 1] : '\0';
 
     private bool ShouldTreatAsNegativeNumber()
     {
